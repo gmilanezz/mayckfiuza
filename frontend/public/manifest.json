@@ -1,0 +1,16 @@
+{
+  "name": "Mayck Fiuza",
+  "short_name": "Mayck Fiuza",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#8b003f",
+  "theme_color": "#8b003f",
+  "icons": [
+    {
+      "src": "/logo-mayck.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
