@@ -200,7 +200,7 @@ class WeightIn(BaseModel):
     measured_on: date = date.today()
 
 
-INVITE_CODE = os.getenv("MAYCK_INVITE_CODE", "DG5A1")
+INVITE_CODE = os.getenv("MAYCK_INVITE_CODE", "M3Y8K")
 
 
 @app.get("/api/public/professors")
