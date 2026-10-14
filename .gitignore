@@ -1,8 +1,6 @@
 __pycache__/
 *.py[cod]
 
-/DEPLOY_MAYCK.md
-
 .venv/
 backend/.venv/
 
