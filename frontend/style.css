@@ -704,7 +704,6 @@
   }
 }
 
-/* V7 typography/navigation adjustments */
 .ui-button,
 .btn,
 .text-btn,
@@ -807,6 +806,8 @@
   }
 }
 
-/* Identidade Mayck Fiuza: botões claros e texto vinho */
-.btn, .ui-button:not(.menu-button):not(.text-btn), button[type="submit"] { background: #fff5f2; color: #8b003f; border-color: #fff5f2; }
 .btn:hover, .ui-button:not(.menu-button):not(.text-btn):hover, button[type="submit"]:hover { background: #fff5f2; color: #8b003f; border-color: #fff5f2; filter: brightness(.95); }
+
+/* Pagamentos e contato fixo */
+.whatsapp-float{position:fixed;right:20px;bottom:20px;z-index:1000;background:#fff5f2;color:#8b003f;padding:13px 20px;border-radius:40px;font-weight:700;text-decoration:none;box-shadow:0 4px 20px #0004}
+.payment-page{display:grid;gap:18px}.payment-student .payment-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}.payment-items{margin-top:20px;max-height:440px;overflow:auto}.payment-check{display:flex;gap:9px;align-items:center;white-space:nowrap}.payment-check input{width:20px;height:20px;accent-color:#8b003f}.payment-alert{border:1px solid #fff5f2;padding:14px;border-radius:10px;margin-top:12px}.payment-alert p{margin:8px 0}

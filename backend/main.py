@@ -1,4 +1,4 @@
-import os, uuid, base64
+import os, uuid, base64, calendar, secrets, urllib.request, json
 from datetime import datetime, timedelta, date
 from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
@@ -104,6 +104,27 @@ class Photo(Base):
     student_id = Column(Integer, ForeignKey("users.id"))
     path = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PaymentPlan(Base):
+    __tablename__ = "payment_plans"
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    professor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    start_date = Column(Date, nullable=False)
+    cycle = Column(String, nullable=False)
+    amount = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True)
+    plan_id = Column(Integer, ForeignKey("payment_plans.id"), nullable=False)
+    due_date = Column(Date, nullable=False)
+    paid = Column(Boolean, default=False, nullable=False)
+    paid_at = Column(DateTime, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
 
 
 Base.metadata.create_all(engine)
@@ -219,7 +240,7 @@ def register(x: RegisterIn, s: Session = Depends(db)):
     code = x.invite_code.strip().upper()
     if len(code) != 5 or not code.isalnum() or code != INVITE_CODE.upper():
         raise HTTPException(403, "Código de acesso inválido")
-    if x.role not in ("professor", "student"):
+    if x.role != "student":
         raise HTTPException(400, "Tipo de conta inválido")
     username = x.username.strip().lower()
     if len(x.password) < 5:
@@ -228,9 +249,9 @@ def register(x: RegisterIn, s: Session = Depends(db)):
         raise HTTPException(409, "Usuário já existe")
     professor_id = None
     if x.role == "student":
-        prof = s.get(User, x.professor_id) if x.professor_id else None
+        prof = s.query(User).filter(User.role == "professor", User.active == True).first()
         if not prof or prof.role != "professor":
-            raise HTTPException(400, "Selecione um professor válido")
+            raise HTTPException(400, "Professor ainda não configurado")
         professor_id = prof.id
     u = User(
         name=x.name.strip(),
@@ -260,6 +281,8 @@ def reset_password(x: ResetPasswordIn, s: Session = Depends(db)):
     u = s.query(User).filter(User.username == username, User.active == True).first()
     if not u:
         raise HTTPException(404, "Usuário não encontrado")
+    if u.role != "student":
+        raise HTTPException(403, "Recuperação do professor indisponível por código de aluno")
     u.password_hash = pwd.hash(x.new_password)
     s.commit()
     return {"ok": True, "message": "Senha redefinida com sucesso"}
@@ -268,7 +291,7 @@ def reset_password(x: ResetPasswordIn, s: Session = Depends(db)):
 @app.post("/api/login")
 def login(f: OAuth2PasswordRequestForm = Depends(), s: Session = Depends(db)):
     u = s.query(User).filter(User.username == f.username).first()
-    if not u or not pwd.verify(f.password, u.password_hash):
+    if not u or not u.active or not pwd.verify(f.password, u.password_hash):
         raise HTTPException(401, "Usuário ou senha inválidos")
     return {
         "access_token": token(u),
@@ -514,3 +537,134 @@ def student_photos(sid: int, u=Depends(me), s: Session = Depends(db)):
     )
     return [{"id": x.id, "path": x.path, "created_at": x.created_at} for x in rows]
 
+
+
+# Conta única do professor: criada apenas por operação administrativa com segredo privado.
+# Configure MAYCK_ADMIN_USERNAME, MAYCK_ADMIN_PASSWORD e MAYCK_ADMIN_NAME no ambiente.
+def ensure_teacher():
+    username = os.getenv("MAYCK_ADMIN_USERNAME", "mayck").strip().lower()
+    password = os.getenv("MAYCK_ADMIN_PASSWORD", "")
+    if not password:
+        return
+    if len(password) < 6:
+        raise RuntimeError("MAYCK_ADMIN_PASSWORD deve ter pelo menos 6 caracteres")
+    with SessionLocal() as session:
+        teacher = session.query(User).filter(User.role == "professor").order_by(User.id).first()
+        if teacher is None:
+            if session.query(User).filter(User.username == username).first():
+                raise RuntimeError("Nome de usuário do professor já está em uso")
+            session.add(User(name=os.getenv("MAYCK_ADMIN_NAME", "Mayck Fiuza"), username=username, password_hash=pwd.hash(password), role="professor", active=True))
+            session.commit()
+
+ensure_teacher()
+
+CYCLES = {"mensal": 1, "trimestral": 3, "semestral": 6, "anual": 12}
+
+def add_months(day, count):
+    month = day.month - 1 + count
+    year = day.year + month // 12
+    month = month % 12 + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+class PaymentPlanIn(BaseModel):
+    student_id: int
+    start_date: date
+    cycle: str
+    amount: Optional[float] = None
+
+class PaymentUpdate(BaseModel):
+    paid: bool
+
+@app.get("/api/payments")
+def get_payments(u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    today = date.today()
+    result = []
+    students = s.query(User).filter(User.role == "student", User.professor_id == u.id).order_by(User.name).all()
+    for student in students:
+        plan = s.query(PaymentPlan).filter_by(student_id=student.id, professor_id=u.id).first()
+        payments = []
+        if plan:
+            # Gerar vencimentos até 12 meses à frente, mantendo o dia-base original.
+            end = add_months(today, 12)
+            n = 0
+            while n < 600:
+                due = add_months(plan.start_date, n * CYCLES[plan.cycle])
+                if due > end: break
+                if due >= plan.start_date:
+                    existing = s.query(Payment).filter_by(plan_id=plan.id, due_date=due).first()
+                    if not existing:
+                        existing = Payment(plan_id=plan.id, due_date=due, paid=False)
+                        s.add(existing)
+                n += 1
+            s.commit()
+            for payment in s.query(Payment).filter_by(plan_id=plan.id).order_by(Payment.due_date).all():
+                payments.append({"id": payment.id, "due_date": payment.due_date.isoformat(), "paid": payment.paid, "overdue": not payment.paid and payment.due_date < today, "alert": not payment.paid and payment.due_date <= today - timedelta(days=1)})
+        result.append({"student_id": student.id, "student_name": student.name, "cycle": plan.cycle if plan else None, "start_date": plan.start_date.isoformat() if plan else None, "amount": plan.amount if plan else None, "payments": payments})
+    return result
+
+@app.put("/api/payments/plan")
+def put_payment_plan(x: PaymentPlanIn, u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    student = s.get(User, x.student_id)
+    if not student or student.role != "student" or student.professor_id != u.id:
+        raise HTTPException(404, "Aluno não encontrado")
+    if x.cycle not in CYCLES: raise HTTPException(400, "Periodicidade inválida")
+    if x.amount is not None and x.amount < 0: raise HTTPException(400, "Valor inválido")
+    plan = s.query(PaymentPlan).filter_by(student_id=student.id).first()
+    if plan:
+        # Não apagar registros quitados; exigir confirmação administrativa para mudar um plano com pagamentos.
+        if s.query(Payment).filter_by(plan_id=plan.id, paid=True).first():
+            raise HTTPException(409, "Há pagamentos quitados neste plano; não é possível alterar a recorrência sem preservar o histórico")
+        s.query(Payment).filter_by(plan_id=plan.id).delete()
+        plan.start_date, plan.cycle, plan.amount = x.start_date, x.cycle, x.amount
+    else:
+        s.add(PaymentPlan(student_id=student.id, professor_id=u.id, start_date=x.start_date, cycle=x.cycle, amount=x.amount))
+    s.commit()
+    return {"ok": True}
+
+@app.patch("/api/payments/{payment_id}")
+def set_payment(payment_id: int, x: PaymentUpdate, u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    payment = s.get(Payment, payment_id)
+    plan = s.get(PaymentPlan, payment.plan_id) if payment else None
+    if not plan or plan.professor_id != u.id: raise HTTPException(404, "Pagamento não encontrado")
+    payment.paid = x.paid
+    payment.paid_at = datetime.utcnow() if x.paid else None
+    s.commit()
+    return {"ok": True}
+
+@app.get("/api/payments/alerts")
+def payment_alerts(u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    today = date.today()
+    rows = s.query(Payment, PaymentPlan, User).join(PaymentPlan, Payment.plan_id == PaymentPlan.id).join(User, PaymentPlan.student_id == User.id).filter(PaymentPlan.professor_id == u.id, Payment.paid == False, Payment.due_date < today).order_by(Payment.due_date).all()
+    return [{"student_name": student.name, "due_date": payment.due_date.isoformat(), "days_late": (today - payment.due_date).days} for payment, plan, student in rows]
+
+# Notificação externa opcional: Vercel Cron chama este endpoint diariamente.
+# Requer CRON_SECRET, RESEND_API_KEY, MAYCK_ALERT_EMAIL e RESEND_FROM_EMAIL.
+@app.get("/api/cron/payment-alerts")
+def cron_payment_alerts(authorization: Optional[str] = __import__('fastapi').Header(default=None), s: Session = Depends(db)):
+    secret = os.getenv("CRON_SECRET")
+    if not secret or not secrets.compare_digest(authorization or "", "Bearer " + secret):
+        raise HTTPException(401, "Não autorizado")
+    key = os.getenv("RESEND_API_KEY")
+    target = os.getenv("MAYCK_ALERT_EMAIL")
+    sender = os.getenv("RESEND_FROM_EMAIL")
+    if not (key and target and sender):
+        return {"sent": 0, "configured": False}
+    today = date.today()
+    rows = s.query(Payment, PaymentPlan, User).join(PaymentPlan, Payment.plan_id == PaymentPlan.id).join(User, PaymentPlan.student_id == User.id).filter(Payment.paid == False, Payment.due_date < today, Payment.notified_at.is_(None)).all()
+    sent = 0
+    for payment, plan, student in rows:
+        payload = json.dumps({"from": sender, "to": [target], "subject": "Mayck Fiuza — pagamento atrasado", "text": f"Aluno: {student.name}\nVencimento: {payment.due_date:%d/%m/%Y}\nAtraso: {(today-payment.due_date).days} dia(s).\nPagamento pendente."}).encode()
+        request = urllib.request.Request("https://api.resend.com/emails", data=payload, headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if response.status >= 300: continue
+            payment.notified_at = datetime.utcnow()
+            s.commit()
+            sent += 1
+        except Exception:
+            s.rollback()
+    return {"sent": sent, "configured": True}

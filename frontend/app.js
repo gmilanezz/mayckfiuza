@@ -18,9 +18,12 @@ async function req(p, o = {}) {
 }
 const logo = () => `<img class="app-image brand-logo" src="/logo-mayck.png" alt="Mayck Fiuza Treinador">`;
 const CONTACT = { instagram: localStorage.MAYCK_INSTAGRAM || "", whatsapp: localStorage.MAYCK_WHATSAPP || "" };
+const WHATSAPP = (import.meta.env.VITE_MAYCK_WHATSAPP || CONTACT.whatsapp || "").trim();
+function whatsappFloat() { const value = WHATSAPP.replace(/[^0-9]/g, ""); return value ? `<a class="whatsapp-float" href="https://wa.me/${value}" target="_blank" rel="noopener noreferrer" aria-label="Abrir WhatsApp">WhatsApp</a>` : ""; }
+const safe = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;", "\"":"&quot;", "'":"&#39;"}[ch]));
 let activeWorkoutTimer = null;
 function login() {
-  app.innerHTML = `<main class="auth"><section class="auth-card">${logo()}<div><h1 class="page-heading accent">Mayck Fiuza</h1><p class="text-paragraph muted">Agenda, treinos e evolução do time.</p></div><form class="app-form" id="f"><label class="field">Usuário<input class="form-control" id="u" autocomplete="username" required></label><label class="field">Senha<input class="form-control" id="p" type="password" autocomplete="current-password" required></label><button class="ui-button btn wide">Entrar</button><button type="button" class="ui-button forgot-link" onclick="forgotPassword()">Esqueci minha senha</button><p id="err" class="text-paragraph error"></p></form><div class="auth-divider"><span>Primeiro acesso?</span></div><div class="auth-actions"><button class="ui-button btn ghost" onclick="register('professor')">Criar conta de professor</button><button class="ui-button btn ghost" onclick="register('student')">Criar conta de aluno</button></div></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-card">${logo()}<div><h1 class="page-heading accent">Mayck Fiuza</h1><p class="text-paragraph muted">Agenda, treinos e evolução dos alunos.</p></div><form class="app-form" id="f"><label class="field">Usuário<input class="form-control" id="u" autocomplete="username" required></label><label class="field">Senha<input class="form-control" id="p" type="password" autocomplete="current-password" required></label><button class="ui-button btn wide">Entrar</button><button type="button" class="ui-button forgot-link" onclick="forgotPassword()">Esqueci minha senha</button><p id="err" class="text-paragraph error"></p></form><div class="auth-divider"><span>Primeiro acesso?</span></div><div class="auth-actions"><button class="ui-button btn ghost" onclick="register('student')">Criar conta de aluno</button></div></section></main>`;
   f.onsubmit = async (e) => {
     e.preventDefault();
     let body = new URLSearchParams({ username: u.value, password: p.value });
@@ -63,10 +66,11 @@ function forgotPassword() {
 }
 
 async function register(role) {
+  role = "student";
   let professors = [];
   if (role === "student")
     professors = await fetch(API + "/public/professors").then((r) => r.json());
-  app.innerHTML = `<main class="auth"><section class="auth-card">${logo()}<button class="ui-button text-btn" onclick="login()">Voltar ao login</button><div><h1 class="page-heading">${role === "professor" ? "Professor" : "Aluno"}</h1><p class="text-paragraph muted">Use o código de 5 caracteres fornecido pelo Mayck.</p></div><form class="app-form" id="rf"><label class="field">Nome completo<input class="form-control" id="rn" required></label><label class="field">Usuário<input class="form-control" id="ru" required></label>${role === "student" ? `<label class="field">Professor<select class="form-select" id="rp" required><option value="">Selecione</option>${professors.map((x) => `<option value="${x.id}">${x.name}</option>`).join("")}</select></label>` : ""}<label class="field">Senha<input class="form-control" id="rpass" type="password" minlength="5" required></label><label class="field">Código Mayck<input id="rcode" maxlength="5" minlength="5" pattern="[A-Za-z0-9]{5}" class="form-control code-input" placeholder="A1B2C" required></label><button class="ui-button btn wide">Criar conta</button><p id="rerr" class="text-paragraph error"></p></form></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-card">${logo()}<button class="ui-button text-btn" onclick="login()">Voltar ao login</button><div><h1 class="page-heading">${role === "professor" ? "Aluno" : "Aluno"}</h1><p class="text-paragraph muted">Use o código de 5 caracteres fornecido pelo Mayck.</p></div><form class="app-form" id="rf"><label class="field">Nome completo<input class="form-control" id="rn" required></label><label class="field">Usuário<input class="form-control" id="ru" required></label>${role === "student" ? `<label class="field">Professor<select class="form-select" id="rp" required><option value="">Selecione</option>${professors.map((x) => `<option value="${x.id}">${x.name}</option>`).join("")}</select></label>` : ""}<label class="field">Senha<input class="form-control" id="rpass" type="password" minlength="5" required></label><label class="field">Código Mayck<input id="rcode" maxlength="5" minlength="5" pattern="[A-Za-z0-9]{5}" class="form-control code-input" placeholder="A1B2C" required></label><button class="ui-button btn wide">Criar conta</button><p id="rerr" class="text-paragraph error"></p></form></section></main>`;
   rf.onsubmit = async (e) => {
     e.preventDefault();
     try {
@@ -103,10 +107,10 @@ function saveSession(d) {
 function menuItems() {
   return user.role === "student"
     ? [["treino","⌁","Meu treino"],["evolucao","↗","Evolução"],["contato","@","Contato"]]
-    : [["agenda","▦","Minha agenda"],["time","◫","Agenda do time"],["alunos","◎","Alunos"],["fotos","▣","Fotos dos alunos"],["contato","@","Contato"]];
+    : [["agenda","▦","Minha agenda"],["alunos","◎","Alunos"],["pagamentos","$","Pagamentos"],["fotos","▣","Fotos dos alunos"],["contato","@","Contato"]];
 }
 function nav() {
-  return `<header class="topbar"><div class="brand-inline nav-logo-only">${logo()}</div><button class="ui-button menu-button" onclick="toggleMenu(true)" aria-label="Abrir menu"><span class="hamburger-icon" aria-hidden="true"><span class="hamburger-line hamburger-line-top"></span><span class="hamburger-line hamburger-line-middle"></span><span class="hamburger-line hamburger-line-bottom"></span></span></button><div class="user-chip"><div><b class="user-name">${user.name}</b><span class="user-role">${user.role}</span></div></div></header><div class="menu-overlay" onclick="toggleMenu(false)"></div><aside class="sidebar"><div class="sidebar-head">${logo()}<button class="ui-button menu-close" onclick="toggleMenu(false)">×</button></div><div class="profile"><b class="profile-name">${user.name}</b><span class="profile-role">${user.role === "student" ? "Aluno" : "Time Mayck Fiuza"}</span></div><nav class="side-nav">${menuItems().map(x=>`<button class="ui-button side-link ${tab===x[0]?"active":""}" onclick="setTab('${x[0]}')"><i class="side-icon">${x[1]}</i><span class="side-label">${x[2]}</span></button>`).join("")}</nav><button class="ui-button side-link logout" onclick="logout()"><i class="side-icon">↪</i><span class="side-label">Sair</span></button></aside>`;
+  return `<header class="topbar"><div class="brand-inline nav-logo-only">${logo()}</div><button class="ui-button menu-button" onclick="toggleMenu(true)" aria-label="Abrir menu"><span class="hamburger-icon" aria-hidden="true"><span class="hamburger-line hamburger-line-top"></span><span class="hamburger-line hamburger-line-middle"></span><span class="hamburger-line hamburger-line-bottom"></span></span></button><div class="user-chip"><div><b class="user-name">${user.name}</b><span class="user-role">${user.role}</span></div></div></header><div class="menu-overlay" onclick="toggleMenu(false)"></div><aside class="sidebar"><div class="sidebar-head">${logo()}<button class="ui-button menu-close" onclick="toggleMenu(false)">×</button></div><div class="profile"><b class="profile-name">${user.name}</b><span class="profile-role">${user.role === "student" ? "Aluno" : "Professor"}</span></div><nav class="side-nav">${menuItems().map(x=>`<button class="ui-button side-link ${tab===x[0]?"active":""}" onclick="setTab('${x[0]}')"><i class="side-icon">${x[1]}</i><span class="side-label">${x[2]}</span></button>`).join("")}</nav><button class="ui-button side-link logout" onclick="logout()"><i class="side-icon">↪</i><span class="side-label">Sair</span></button></aside>`;
 }
 function setTab(nextTab) {
   tab = nextTab;
@@ -119,13 +123,14 @@ function toggleMenu(open) {
 }
 async function render() {
   if (!token) return login();
-  app.innerHTML = `${nav()}<main class="shell"><div class="page-title"><h1 class="page-heading">${menuItems().find((x) => x[0] === tab)?.[2] || "Painel"}</h1></div><div id="view"></div></main>`;
+  app.innerHTML = `${nav()}${whatsappFloat()}<main class="shell"><div class="page-title"><h1 class="page-heading">${menuItems().find((x) => x[0] === tab)?.[2] || "Painel"}</h1></div><div id="view"></div></main>`;
   try {
     if (tab === "contato") return contato();
     if (user.role === "student") return tab === "evolucao" ? evolucao() : treino();
     if (tab === "alunos") return alunos();
+    if (tab === "pagamentos") return pagamentos();
     if (tab === "fotos") return fotosAlunos();
-    return agenda(tab === "time");
+    return agenda(false);
   } catch (e) {
     view.innerHTML = `<div class="card error">${e.message}</div>`;
   }
@@ -137,7 +142,7 @@ async function agenda(team = false) {
   function draw(filter = "") {
     const normalized = filter.toLowerCase();
     const list = document.querySelector("#ls");
-    list.innerHTML = data.filter((item) => `${item.professor || ""} ${item.student || ""} ${days[item.weekday] || ""}`.toLowerCase().includes(normalized)).map((item) => `<div class="row"><div><b class="row-title">${item.student}</b><div class="muted">${item.professor} · ${days[item.weekday]} ${item.time}</div></div>${!team ? `<button class="ui-button btn action compact" onclick="delLesson(${item.id})">Excluir</button>` : ""}</div>`).join("") || '<div class="empty">Nenhuma aula cadastrada.</div>';
+    list.innerHTML = data.filter((item) => `${item.professor || ""} ${item.student || ""} ${days[item.weekday] || ""}`.toLowerCase().includes(normalized)).map((item) => `<div class="row"><div><b class="row-title">${item.student}</b><div class="muted">${days[item.weekday]} ${item.time}</div></div>${!team ? `<button class="ui-button btn action compact" onclick="delLesson(${item.id})">Excluir</button>` : ""}</div>`).join("") || '<div class="empty">Nenhuma aula cadastrada.</div>';
   }
   draw();
   if (team) { const search = document.querySelector("#q"); search.addEventListener("input", () => draw(search.value)); return; }
@@ -330,6 +335,22 @@ function contato(){
   const ig=CONTACT.instagram, wa=CONTACT.whatsapp;
   view.innerHTML=`<section class="contact-card">${logo()}<h2 class="section-heading">Mayck Fiuza</h2><p class="text-paragraph muted">Fale com o time pelos canais oficiais.</p><div class="contact-actions">${ig?`<a class="app-link contact-link" href="${ig}" target="_blank" rel="noopener"><b class="contact-name">INSTAGRAM</b><span class="contact-description">Abrir perfil →</span></a>`:`<div class="contact-link disabled"><b class="contact-name">INSTAGRAM</b><span class="contact-description">Link ainda não configurado</span></div>`}${wa?`<a class="app-link contact-link" href="${wa}" target="_blank" rel="noopener"><b class="contact-name">WHATSAPP</b><span class="contact-description">Iniciar conversa →</span></a>`:`<div class="contact-link disabled"><b class="contact-name">WHATSAPP</b><span class="contact-description">Link ainda não configurado</span></div>`}</div></section>`;
 }
+
+async function pagamentos() {
+  const rows = await req("/payments");
+  const alerts = rows.flatMap(x => x.payments.filter(p => p.alert).map(p => ({name:x.student_name, due:p.due_date})));
+  view.innerHTML = `<div class="payment-page"><section class="card"><h2 class="section-heading">Conferência de pagamentos</h2><p class="muted">Configure a data inicial e a periodicidade de cada aluno. Os próximos vencimentos serão gerados automaticamente.</p>${alerts.length ? `<div class="payment-alert" role="alert"><b>Pagamentos atrasados (${alerts.length})</b>${alerts.map(a=>`<p>${safe(a.name)} — vencimento ${new Date(a.due+'T12:00:00').toLocaleDateString('pt-BR')}</p>`).join('')}</div>` : `<p class="muted">Nenhum aviso de atraso no momento.</p>`}</section>${rows.map(x=>`<section class="card payment-student"><h2 class="section-heading">${safe(x.student_name)}</h2><form class="app-form payment-plan" data-student="${x.student_id}"><label class="field">Primeiro vencimento<input class="form-control" type="date" name="start_date" value="${x.start_date || ''}" required></label><label class="field">Periodicidade<select class="form-select" name="cycle">${[['mensal','Mensal'],['trimestral','Trimestral'],['semestral','Semestral'],['anual','Anual']].map(([key,label])=>`<option value="${key}" ${x.cycle===key?'selected':''}>${label}</option>`).join('')}</select></label><label class="field">Valor (R$) — opcional<input class="form-control" type="number" min="0" step="0.01" name="amount" value="${x.amount ?? ''}"></label><button class="ui-button btn">Salvar vencimentos</button></form><div class="payment-items">${x.payments.length ? x.payments.filter(p=>p.due_date <= new Date(new Date().setFullYear(new Date().getFullYear()+1)).toISOString().slice(0,10)).map(p=>`<div class="row"><div><b>${new Date(p.due_date+'T12:00:00').toLocaleDateString('pt-BR')}</b><div class="muted">${p.paid?'Pago':p.overdue?'Atrasado':'Pendente'}</div></div><label class="payment-check"><input type="checkbox" data-payment="${p.id}" ${p.paid?'checked':''}> Pago</label></div>`).join('') : '<p class="muted">Configure o primeiro vencimento para gerar as cobranças.</p>'}</div></section>`).join('') || '<section class="card">Cadastre um aluno primeiro para configurar os pagamentos.</section>'}</div>`;
+  document.querySelectorAll('.payment-plan').forEach(form=>form.addEventListener('submit',async e=>{
+    e.preventDefault(); const data = new FormData(form);
+    try { await req('/payments/plan',{method:'PUT',body:JSON.stringify({student_id:Number(form.dataset.student),start_date:data.get('start_date'),cycle:data.get('cycle'),amount:data.get('amount')===''?null:Number(data.get('amount'))})}); await pagamentos(); }
+    catch(err){ alert(err.message); }
+  }));
+  document.querySelectorAll('[data-payment]').forEach(input=>input.addEventListener('change',async()=>{
+    try {await req('/payments/'+input.dataset.payment,{method:'PATCH',body:JSON.stringify({paid:input.checked})});await pagamentos();}
+    catch(err){alert(err.message); input.checked=!input.checked;}
+  }));
+}
+
 function logout() {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
