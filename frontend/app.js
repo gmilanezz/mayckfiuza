@@ -107,7 +107,7 @@ function saveSession(d) {
 function menuItems() {
   return user.role === "student"
     ? [["treino","⌁","Meu treino"],["evolucao","↗","Evolução"],["contato","@","Contato"]]
-    : [["agenda","▦","Minha agenda"],["alunos","◎","Alunos"],["pagamentos","$","Pagamentos"],["fotos","▣","Fotos dos alunos"],["contato","@","Contato"]];
+    : [["agenda","▦","Aulas do dia"],["alunos","◎","Alunos"],["pagamentos","$","Pagamentos"],["fotos","▣","Fotos dos alunos"],["contato","@","Contato"]];
 }
 function nav() {
   return `<header class="topbar"><div class="brand-inline nav-logo-only">${logo()}</div><button class="ui-button menu-button" onclick="toggleMenu(true)" aria-label="Abrir menu"><span class="hamburger-icon" aria-hidden="true"><span class="hamburger-line hamburger-line-top"></span><span class="hamburger-line hamburger-line-middle"></span><span class="hamburger-line hamburger-line-bottom"></span></span></button><div class="user-chip"><div><b class="user-name">${user.name}</b><span class="user-role">${user.role}</span></div></div></header><div class="menu-overlay" onclick="toggleMenu(false)"></div><aside class="sidebar"><div class="sidebar-head">${logo()}<button class="ui-button menu-close" onclick="toggleMenu(false)">×</button></div><div class="profile"><b class="profile-name">${user.name}</b><span class="profile-role">${user.role === "student" ? "Aluno" : "Professor"}</span></div><nav class="side-nav">${menuItems().map(x=>`<button class="ui-button side-link ${tab===x[0]?"active":""}" onclick="setTab('${x[0]}')"><i class="side-icon">${x[1]}</i><span class="side-label">${x[2]}</span></button>`).join("")}</nav><button class="ui-button side-link logout" onclick="logout()"><i class="side-icon">↪</i><span class="side-label">Sair</span></button></aside>`;
@@ -135,30 +135,82 @@ async function render() {
     view.innerHTML = `<div class="card error">${e.message}</div>`;
   }
 }
-async function agenda(team = false) {
-  const data = await req(team ? "/lessons?team=true" : "/lessons");
-  view.innerHTML = `<div class="grid"><section class="card"><div class="section-head"><h2 class="section-heading">${team ? "Agenda completa" : "Nova aula"}</h2></div>${team ? `<label class="field">Buscar aula<input class="form-control" id="q" placeholder="Professor, aluno ou dia"></label>` : `<form class="app-form" id="lf"><label class="field">Nome do aluno<input class="form-control" id="lessonStudentName" placeholder="Digite o nome do aluno" autocomplete="off" required></label><label class="field">Dia<select class="form-select" id="day">${["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((d, i) => `<option value="${i}">${d}</option>`).join("")}</select></label><label class="field">Horário<input class="form-control" id="time" type="time" required></label><button class="ui-button btn">Salvar aula</button></form>`}</section><section class="card"><h2 class="section-heading">Próximas aulas</h2><div id="ls" class="list"></div></section></div>`;
+async function agenda() {
+  const [data, students] = await Promise.all([req("/lessons"), req("/students")]);
   const days = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-  function draw(filter = "") {
-    const normalized = filter.toLowerCase();
-    const list = document.querySelector("#ls");
-    list.innerHTML = data.filter((item) => `${item.professor || ""} ${item.student || ""} ${days[item.weekday] || ""}`.toLowerCase().includes(normalized)).map((item) => `<div class="row"><div><b class="row-title">${item.student}</b><div class="muted">${days[item.weekday]} ${item.time}</div></div>${!team ? `<button class="ui-button btn action compact" onclick="delLesson(${item.id})">Excluir</button>` : ""}</div>`).join("") || '<div class="empty">Nenhuma aula cadastrada.</div>';
-  }
-  draw();
-  if (team) { const search = document.querySelector("#q"); search.addEventListener("input", () => draw(search.value)); return; }
-  document.querySelector("#lf").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    await req("/lessons", { method: "POST", body: JSON.stringify({ student_name: document.querySelector("#lessonStudentName").value.trim(), weekday: Number(document.querySelector("#day").value), time: document.querySelector("#time").value }) });
-    render();
+  view.innerHTML = `<div class="grid"><section class="card"><h2 class="section-heading">Nova aula</h2><form class="app-form" id="lf"><label class="field">Aluno cadastrado<select class="form-select" id="lessonStudent" required><option value="">Selecione um aluno</option>${students.map(s=>`<option value="${s.id}">${safe(s.name)}</option>`).join("")}</select></label><label class="field">Dia<select class="form-select" id="day">${["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((d,i)=>`<option value="${i}">${d}</option>`).join("")}</select></label><label class="field">Horário<input class="form-control" id="time" type="time" required></label><button class="ui-button btn">Salvar aula</button></form></section><section class="card"><h2 class="section-heading">Aulas pendentes</h2><div class="list">${data.filter(x=>x.status==='pending').map(x=>`<div class="row"><div><b class="row-title">${safe(x.student)}</b><div class="muted">${days[x.weekday]} ${safe(x.time)}</div></div><div class="row-actions"><button class="ui-button btn action compact" title="Marcar como concluída" aria-label="Concluir aula de ${safe(x.student)}" onclick="finishLesson(${x.id})">✓</button><button class="ui-button btn action compact" onclick="delLesson(${x.id})">Excluir</button></div></div>`).join("") || '<div class="empty">Nenhuma aula pendente.</div>'}</div></section></div>`;
+  document.querySelector('#lf').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const student = students.find(s=>s.id===Number(document.querySelector('#lessonStudent').value));
+    if(!student) return alert('Selecione um aluno cadastrado.');
+    try {await req('/lessons',{method:'POST',body:JSON.stringify({student_id:student.id,student_name:student.name,weekday:Number(document.querySelector('#day').value),time:document.querySelector('#time').value})});await render();}
+    catch(err){alert(err.message);}
   });
 }
+async function finishLesson(id) {
+  try {await req('/lessons/'+id+'/status?status=completed',{method:'PATCH'});await render();}
+  catch(err){alert(err.message);}
+}
 async function delLesson(id) {
-  await req("/lessons/" + id, { method: "DELETE" });
-  render();
+  if(!confirm('Cancelar esta aula? Ela continuará no histórico como cancelada.')) return;
+  try {await req('/lessons/'+id,{method:'DELETE'});await render();}
+  catch(err){alert(err.message);}
+}
+const lessonCalendarState = { studentId: null, year: new Date().getFullYear(), month: new Date().getMonth(), lessons: [], name: '' };
+function calendarDate(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+function drawStudentLessonCalendar() {
+  const state = lessonCalendarState;
+  const editor = document.querySelector('#editor');
+  if (!editor) return;
+  const {year, month, lessons} = state;
+  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
+  const count = new Date(year, month + 1, 0).getDate();
+  const label = new Intl.DateTimeFormat('pt-BR', {month:'long', year:'numeric'}).format(new Date(year, month, 1));
+  let cells = Array.from({length:firstDay}, () => '<div class="lesson-calendar-blank" aria-hidden="true"></div>');
+  for (let day = 1; day <= count; day++) {
+    const date = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const weekday = (new Date(year, month, day).getDay()+6)%7;
+    const events = lessons.filter(x => {
+      if (x.status === 'completed') return calendarDate(x.completed_at) === date;
+      if (x.status === 'cancelled') return calendarDate(x.cancelled_at) === date;
+      return x.weekday === weekday; // Aula semanal pendente: previsão, não presença confirmada.
+    });
+    const dots = events.map(x => {
+      const kind = x.status === 'completed' ? 'lesson-done' : x.status === 'cancelled' ? 'lesson-cancelled' : 'lesson-pending';
+      const status = x.status === 'completed' ? 'Concluída' : x.status === 'cancelled' ? 'Cancelada' : 'Prevista';
+      return `<span class="lesson-dot ${kind}" title="${status} — ${safe(x.time)}" aria-label="${status} às ${safe(x.time)}"></span>`;
+    }).join('');
+    const today = new Date();
+    const isToday = today.getFullYear()===year && today.getMonth()===month && today.getDate()===day;
+    cells.push(`<div class="lesson-calendar-day ${isToday?'is-today':''}" aria-label="Dia ${day}, ${events.length} aulas"><span class="lesson-calendar-number">${day}</span><div class="lesson-calendar-dots">${dots}</div></div>`);
+  }
+  editor.innerHTML = `<section class="card editor"><h2 class="section-heading">Aulas de ${safe(state.name)}</h2><div class="lesson-calendar-nav"><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(-1)" aria-label="Mês anterior">‹</button><strong>${safe(label)}</strong><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(1)" aria-label="Próximo mês">›</button></div><div class="lesson-calendar-grid">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div class="lesson-calendar-weekday">${d}</div>`).join('')}${cells.join('')}</div><div class="lesson-calendar-legend"><span><i class="lesson-dot lesson-done"></i> Concluída</span><span><i class="lesson-dot lesson-pending"></i> Prevista / não concluída</span><span><i class="lesson-dot lesson-cancelled"></i> Cancelada</span></div><p class="muted lesson-calendar-note">Aulas pendentes são exibidas semanalmente no dia programado. Aulas concluídas e canceladas aparecem na data em que foram marcadas. O cadastro atual não registra uma data específica para cada ocorrência.</p></section>`;
+}
+function changeStudentLessonMonth(offset) {
+  const next = new Date(lessonCalendarState.year, lessonCalendarState.month + offset, 1);
+  lessonCalendarState.year = next.getFullYear();
+  lessonCalendarState.month = next.getMonth();
+  drawStudentLessonCalendar();
+}
+async function studentLessons(id) {
+  try {
+    const [lessons, students] = await Promise.all([req('/students/'+id+'/lessons'),req('/students')]);
+    lessonCalendarState.studentId = id;
+    lessonCalendarState.lessons = lessons;
+    lessonCalendarState.name = students.find(s=>s.id===id)?.name || 'Aluno';
+    const now = new Date();
+    lessonCalendarState.year = now.getFullYear();
+    lessonCalendarState.month = now.getMonth();
+    drawStudentLessonCalendar();
+  } catch(err) {alert(err.message);}
 }
 async function alunos() {
   let ss = await req("/students");
-  view.innerHTML = `<div class="grid"><section class="card"><div class="section-head"><h2 class="section-heading">Adicionar aluno</h2></div><p class="text-paragraph muted">O aluno também pode criar a própria conta usando o código Mayck e selecionar você como professor.</p><form class="app-form" id="sf"><label class="field">Nome<input class="form-control" id="sn" required></label><label class="field">Usuário<input class="form-control" id="su" required></label><label class="field">Senha inicial<input class="form-control" id="sp" minlength="5" required></label><button class="ui-button btn">Cadastrar diretamente</button></form></section><section class="card"><h2 class="section-heading">Meus alunos</h2><div class="list">${ss.map((s) => `<div class="row"><div><b class="row-title">${s.name}</b><div class="muted">@${s.username}</div></div><div class="row-actions"><button class="ui-button btn action compact" onclick="workout(${s.id},'${s.name.replaceAll("'", "")}')">Treino</button><button class="ui-button btn action compact" onclick="openStudentPhotos(${s.id})">Fotos</button></div></div>`).join("") || '<span class="empty">Nenhum aluno.</span>'}</div></section></div><div id="editor"></div>`;
+  view.innerHTML = `<div class="grid"><section class="card"><div class="section-head"><h2 class="section-heading">Adicionar aluno</h2></div><p class="text-paragraph muted">O aluno também pode criar a própria conta usando o código Mayck e selecionar você como professor.</p><form class="app-form" id="sf"><label class="field">Nome<input class="form-control" id="sn" required></label><label class="field">Usuário<input class="form-control" id="su" required></label><label class="field">Senha inicial<input class="form-control" id="sp" minlength="5" required></label><button class="ui-button btn">Cadastrar diretamente</button></form></section><section class="card"><h2 class="section-heading">Meus alunos</h2><div class="list">${ss.map((s) => `<div class="row"><div><b class="row-title">${s.name}</b><div class="muted">@${s.username}</div></div><div class="row-actions"><button class="ui-button btn action compact" onclick="workout(${s.id},'${s.name.replaceAll("'", "")}')">Treino</button><button class="ui-button btn action compact" onclick="openStudentPhotos(${s.id})">Fotos</button><button class="ui-button btn action compact" onclick="studentLessons(${s.id})">Aulas</button></div></div>`).join("") || '<span class="empty">Nenhum aluno.</span>'}</div></section></div><div id="editor"></div>`;
   sf.onsubmit = async (e) => {
     e.preventDefault();
     await req("/students", {
@@ -369,6 +421,9 @@ Object.assign(window, {
   setTab,
   toggleMenu,
   delLesson,
+  finishLesson,
+  studentLessons,
+  changeStudentLessonMonth,
   workout,
   treino,
   treinoDetalhe,

@@ -69,6 +69,9 @@ class Lesson(Base):
     weekday = Column(Integer)
     time = Column(String)
     note = Column(String, default="")
+    status = Column(String, default="pending", nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
 
 
 class Workout(Base):
@@ -139,6 +142,10 @@ with engine.begin() as conn:
         ))}
     if "student_name" not in lesson_columns:
         conn.execute(text("ALTER TABLE lessons ADD COLUMN student_name VARCHAR DEFAULT ''"))
+    for column, definition in (("status", "VARCHAR DEFAULT 'pending' NOT NULL"),
+                               ("completed_at", "TIMESTAMP"), ("cancelled_at", "TIMESTAMP")):
+        if column not in lesson_columns:
+            conn.execute(text(f"ALTER TABLE lessons ADD COLUMN {column} {definition}"))
 
 app = FastAPI(title="Mayck Fiuza Training API")
 app.add_middleware(
@@ -203,6 +210,7 @@ class ResetPasswordIn(BaseModel):
 
 
 class LessonIn(BaseModel):
+    student_id: Optional[int] = None
     student_name: str
     weekday: int
     time: str
@@ -353,48 +361,113 @@ def del_student(sid: int, u=Depends(me), s: Session = Depends(db)):
     return {"ok": True}
 
 
+def lesson_json(x):
+    return {"id": x.id, "professor_id": x.professor_id, "student_id": x.student_id,
+            "student": x.student_name, "weekday": x.weekday, "time": x.time,
+            "note": x.note, "status": x.status or "pending",
+            "completed_at": x.completed_at.isoformat() if x.completed_at else None,
+            "cancelled_at": x.cancelled_at.isoformat() if x.cancelled_at else None}
+
+
 @app.get("/api/lessons")
 def lessons(team: bool = False, u=Depends(me), s: Session = Depends(db)):
     q = s.query(Lesson)
-    if u.role == "professor" and not team:
-        q = q.filter((Lesson.professor_id == u.id) | (Lesson.professor_id.is_(None)))
+    if u.role == "professor":
+        q = q.filter(Lesson.professor_id == u.id)
     elif u.role == "student":
         q = q.filter(Lesson.student_id == u.id)
-    users = {x.id: x.name for x in s.query(User).all()}
-    return [
-        {
-            "id": x.id,
-            "professor_id": x.professor_id,
-            "professor": users.get(x.professor_id),
-            "student_id": x.student_id,
-            "student": x.student_name or users.get(x.student_id) or "Aluno",
-            "weekday": x.weekday,
-            "time": x.time,
-            "note": x.note,
-        }
-        for x in q.all()
-    ]
+    return [lesson_json(x) for x in q.order_by(Lesson.weekday, Lesson.time).all()]
+
+
+@app.get("/api/students/{sid}/lessons")
+def student_lessons(sid: int, u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    student = s.get(User, sid)
+    if not student or student.role != "student" or student.professor_id != u.id:
+        raise HTTPException(404, "Aluno não encontrado")
+    return [lesson_json(x) for x in s.query(Lesson).filter(
+        Lesson.student_id == sid, Lesson.professor_id == u.id
+    ).order_by(Lesson.weekday, Lesson.time).all()]
+
+
+@app.get("/api/lessons/monthly-summary")
+def lesson_summary(month: Optional[str] = None, u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    try:
+        selected = date.fromisoformat((month or date.today().strftime("%Y-%m")) + "-01")
+    except ValueError:
+        raise HTTPException(400, "Mês inválido: use AAAA-MM")
+    first = datetime(selected.year, selected.month, 1)
+    last = datetime(selected.year + (selected.month == 12), (selected.month % 12) + 1, 1)
+    rows = s.query(Lesson).filter(Lesson.professor_id == u.id).all()
+    # Os agendamentos são semanais sem data de início; o resumo contabiliza
+    # os eventos concluídos/cancelados no mês, e os pendentes atuais.
+    completed = sum(x.status == "completed" and x.completed_at and first <= x.completed_at < last for x in rows)
+    cancelled = sum(x.status == "cancelled" and x.cancelled_at and first <= x.cancelled_at < last for x in rows)
+    pending = sum((x.status or "pending") == "pending" for x in rows) if selected.year == date.today().year and selected.month == date.today().month else 0
+    return {"month": selected.strftime("%Y-%m"), "total": completed + cancelled + pending,
+            "completed": completed, "cancelled": cancelled, "pending": pending}
 
 
 @app.post("/api/lessons")
 def add_lesson(x: LessonIn, u=Depends(me), s: Session = Depends(db)):
     allow_prof(u)
     student_name = x.student_name.strip()
+    student_id = x.student_id
+    if student_id is not None:
+        student = s.get(User, student_id)
+        if not student or student.role != "student" or student.professor_id != u.id:
+            raise HTTPException(400, "Aluno não pertence ao professor")
+        student_name = student.name
+    elif student_name:
+        matches = s.query(User).filter(User.professor_id == u.id, User.role == "student").all()
+        matches = [st for st in matches if st.name.casefold() == student_name.casefold()]
+        if len(matches) == 1:
+            student_id = matches[0].id
+        elif len(matches) > 1:
+            raise HTTPException(400, "Nome repetido; selecione o aluno cadastrado")
     if not student_name:
-        raise HTTPException(400, "Informe o nome do aluno.")
-    a = Lesson(professor_id=u.id, student_id=None, student_name=student_name, weekday=x.weekday, time=x.time, note=x.note)
+        raise HTTPException(400, "Informe o nome do aluno")
+    if x.weekday not in range(7):
+        raise HTTPException(400, "Dia inválido")
+    a = Lesson(professor_id=u.id, student_id=student_id, student_name=student_name,
+               weekday=x.weekday, time=x.time, note=x.note, status="pending")
     s.add(a)
     s.commit()
     return {"id": a.id}
 
 
+@app.patch("/api/lessons/{lid}/status")
+def update_lesson_status(lid: int, status: str, u=Depends(me), s: Session = Depends(db)):
+    allow_prof(u)
+    if status not in ("completed", "cancelled"):
+        raise HTTPException(400, "Status inválido")
+    lesson = s.get(Lesson, lid)
+    if not lesson or lesson.professor_id != u.id:
+        raise HTTPException(404, "Aula não encontrada")
+    if (lesson.status or "pending") != "pending":
+        raise HTTPException(409, "Aula já finalizada")
+    if status == "completed" and lesson.student_id is None:
+        raise HTTPException(400, "Associe a aula a um aluno cadastrado antes de concluir")
+    lesson.status = status
+    if status == "completed":
+        lesson.completed_at = datetime.utcnow()
+    else:
+        lesson.cancelled_at = datetime.utcnow()
+    s.commit()
+    return lesson_json(lesson)
+
+
 @app.delete("/api/lessons/{lid}")
 def del_lesson(lid: int, u=Depends(me), s: Session = Depends(db)):
     allow_prof(u)
-    x = s.get(Lesson, lid)
-    if not x or (u.role != "admin" and x.professor_id != u.id):
+    lesson = s.get(Lesson, lid)
+    if not lesson or lesson.professor_id != u.id:
         raise HTTPException(404)
-    s.delete(x)
+    if (lesson.status or "pending") != "pending":
+        raise HTTPException(409, "Aula já finalizada")
+    lesson.status = "cancelled"
+    lesson.cancelled_at = datetime.utcnow()
     s.commit()
     return {"ok": True}
 
@@ -545,6 +618,8 @@ def ensure_teacher():
     username = os.getenv("MAYCK_ADMIN_USERNAME", "mayck").strip().lower()
     password = os.getenv("MAYCK_ADMIN_PASSWORD", "")
     if not password:
+        # Local SQLite: allow initial setup using the explicit helper script.
+        # Production/Neon: require MAYCK_ADMIN_PASSWORD in the environment.
         return
     if len(password) < 6:
         raise RuntimeError("MAYCK_ADMIN_PASSWORD deve ter pelo menos 6 caracteres")

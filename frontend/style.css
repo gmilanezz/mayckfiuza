@@ -736,7 +736,15 @@
   color: var(--accent);
 }
 
-.workout-periodization { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.4; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.workout-periodization {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
 .side-label {
   font-size: inherit;
@@ -778,7 +786,6 @@
   border-radius: 999px;
 }
 
-
 /* iOS/Safari: impede campos de data/hora de ultrapassarem o card */
 .field,
 .app-form,
@@ -806,8 +813,133 @@
   }
 }
 
-.btn:hover, .ui-button:not(.menu-button):not(.text-btn):hover, button[type="submit"]:hover { background: #fff5f2; color: #8b003f; border-color: #fff5f2; filter: brightness(.95); }
+.btn:hover,
+.ui-button:not(.menu-button):not(.text-btn):hover,
+button[type="submit"]:hover {
+  background: #fff5f2;
+  color: #8b003f;
+  border-color: #fff5f2;
+  filter: brightness(0.95);
+}
 
 /* Pagamentos e contato fixo */
-.whatsapp-float{position:fixed;right:20px;bottom:20px;z-index:1000;background:#fff5f2;color:#8b003f;padding:13px 20px;border-radius:40px;font-weight:700;text-decoration:none;box-shadow:0 4px 20px #0004}
-.payment-page{display:grid;gap:18px}.payment-student .payment-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}.payment-items{margin-top:20px;max-height:440px;overflow:auto}.payment-check{display:flex;gap:9px;align-items:center;white-space:nowrap}.payment-check input{width:20px;height:20px;accent-color:#8b003f}.payment-alert{border:1px solid #fff5f2;padding:14px;border-radius:10px;margin-top:12px}.payment-alert p{margin:8px 0}
+.whatsapp-float {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  background: #fff5f2;
+  color: #8b003f;
+  padding: 13px 20px;
+  border-radius: 40px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 4px 20px #0004;
+}
+.payment-page {
+  display: grid;
+  gap: 18px;
+}
+.payment-student .payment-plan {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.payment-items {
+  margin-top: 20px;
+  max-height: 440px;
+  overflow: auto;
+}
+.payment-check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  white-space: nowrap;
+}
+.payment-check input {
+  width: 20px;
+  height: 20px;
+  accent-color: #8b003f;
+}
+.payment-alert {
+  border: 1px solid #fff5f2;
+  padding: 14px;
+  border-radius: 10px;
+  margin-top: 12px;
+}
+.payment-alert p {
+  margin: 8px 0;
+}
+
+/* Histórico e resumo de aulas */
+.lesson-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.lesson-stats > div {
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lesson-stats b {
+  font-size: 1.8rem;
+}
+.lesson-stats span {
+  font-size: 0.85rem;
+}
+.lesson-history {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lesson-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  border: 1px solid #fff5f2;
+}
+.lesson-done {
+  background: #24bb62;
+}
+.lesson-pending {
+  background: #fff5f2;
+}
+.lesson-cancelled {
+  background: #888;
+}
+@media (max-width: 600px) {
+  .lesson-stats {
+    grid-template-columns: 1fr;
+  }
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Calendário de aulas por aluno */
+.lesson-calendar-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; text-transform:capitalize; }
+.lesson-calendar-nav strong { text-align:center; }
+.lesson-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
+.lesson-calendar-weekday { text-align:center; font-size:.78rem; font-weight:700; padding:8px 0; }
+.lesson-calendar-day { min-height:74px; border:1px solid rgba(255,245,242,.27); border-radius:9px; padding:7px 5px; min-width:0; }
+.lesson-calendar-blank { min-height:74px; }
+.lesson-calendar-day.is-today { outline:2px solid #fff5f2; outline-offset:-2px; }
+.lesson-calendar-number { display:block; font-size:.85rem; font-weight:700; }
+.lesson-calendar-dots { display:flex; flex-wrap:wrap; gap:4px; margin-top:9px; }
+.lesson-calendar-dots .lesson-dot { width:11px; height:11px; }
+.lesson-calendar-legend { display:flex; gap:15px; flex-wrap:wrap; margin-top:18px; font-size:.84rem; }
+.lesson-calendar-legend span { display:inline-flex; align-items:center; gap:6px; }
+.lesson-calendar-legend .lesson-dot { width:12px; height:12px; }
+.lesson-calendar-note { margin-top:12px; font-size:.8rem; }
+.lesson-calendar-dots .lesson-pending, .lesson-calendar-legend .lesson-pending { background:#101010; border-color:#fff5f2; }
+@media(max-width:600px) { .lesson-calendar-grid {gap:3px;} .lesson-calendar-day,.lesson-calendar-blank {min-height:57px;} .lesson-calendar-day {padding:5px 3px;} .lesson-calendar-dots {gap:2px;margin-top:6px;} .lesson-calendar-dots .lesson-dot {width:9px;height:9px;} }
