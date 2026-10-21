@@ -67,6 +67,7 @@ class Lesson(Base):
     student_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     student_name = Column(String, default="")
     weekday = Column(Integer)
+    scheduled_date = Column(Date, nullable=True, index=True)
     time = Column(String)
     note = Column(String, default="")
     status = Column(String, default="pending", nullable=False)
@@ -143,7 +144,8 @@ with engine.begin() as conn:
     if "student_name" not in lesson_columns:
         conn.execute(text("ALTER TABLE lessons ADD COLUMN student_name VARCHAR DEFAULT ''"))
     for column, definition in (("status", "VARCHAR DEFAULT 'pending' NOT NULL"),
-                               ("completed_at", "TIMESTAMP"), ("cancelled_at", "TIMESTAMP")):
+                               ("completed_at", "TIMESTAMP"), ("cancelled_at", "TIMESTAMP"),
+                               ("scheduled_date", "DATE")):
         if column not in lesson_columns:
             conn.execute(text(f"ALTER TABLE lessons ADD COLUMN {column} {definition}"))
 
@@ -212,7 +214,7 @@ class ResetPasswordIn(BaseModel):
 class LessonIn(BaseModel):
     student_id: Optional[int] = None
     student_name: str
-    weekday: int
+    scheduled_date: date
     time: str
     note: str = ""
 
@@ -363,7 +365,8 @@ def del_student(sid: int, u=Depends(me), s: Session = Depends(db)):
 
 def lesson_json(x):
     return {"id": x.id, "professor_id": x.professor_id, "student_id": x.student_id,
-            "student": x.student_name, "weekday": x.weekday, "time": x.time,
+            "student": x.student_name, "weekday": x.weekday,
+            "scheduled_date": x.scheduled_date.isoformat() if x.scheduled_date else None, "time": x.time,
             "note": x.note, "status": x.status or "pending",
             "completed_at": x.completed_at.isoformat() if x.completed_at else None,
             "cancelled_at": x.cancelled_at.isoformat() if x.cancelled_at else None}
@@ -376,7 +379,7 @@ def lessons(team: bool = False, u=Depends(me), s: Session = Depends(db)):
         q = q.filter(Lesson.professor_id == u.id)
     elif u.role == "student":
         q = q.filter(Lesson.student_id == u.id)
-    return [lesson_json(x) for x in q.order_by(Lesson.weekday, Lesson.time).all()]
+    return [lesson_json(x) for x in q.order_by(Lesson.scheduled_date, Lesson.time).all()]
 
 
 @app.get("/api/students/{sid}/lessons")
@@ -387,7 +390,7 @@ def student_lessons(sid: int, u=Depends(me), s: Session = Depends(db)):
         raise HTTPException(404, "Aluno não encontrado")
     return [lesson_json(x) for x in s.query(Lesson).filter(
         Lesson.student_id == sid, Lesson.professor_id == u.id
-    ).order_by(Lesson.weekday, Lesson.time).all()]
+    ).order_by(Lesson.scheduled_date, Lesson.time).all()]
 
 
 @app.get("/api/lessons/monthly-summary")
@@ -428,10 +431,9 @@ def add_lesson(x: LessonIn, u=Depends(me), s: Session = Depends(db)):
             raise HTTPException(400, "Nome repetido; selecione o aluno cadastrado")
     if not student_name:
         raise HTTPException(400, "Informe o nome do aluno")
-    if x.weekday not in range(7):
-        raise HTTPException(400, "Dia inválido")
     a = Lesson(professor_id=u.id, student_id=student_id, student_name=student_name,
-               weekday=x.weekday, time=x.time, note=x.note, status="pending")
+               scheduled_date=x.scheduled_date, weekday=x.scheduled_date.weekday(),
+               time=x.time, note=x.note, status="pending")
     s.add(a)
     s.commit()
     return {"id": a.id}

@@ -135,15 +135,22 @@ async function render() {
     view.innerHTML = `<div class="card error">${e.message}</div>`;
   }
 }
+function localDateISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatLessonDate(iso) {
+  const [year,month,day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}
 async function agenda() {
   const [data, students] = await Promise.all([req("/lessons"), req("/students")]);
-  const days = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-  view.innerHTML = `<div class="grid"><section class="card"><h2 class="section-heading">Nova aula</h2><form class="app-form" id="lf"><label class="field">Aluno cadastrado<select class="form-select" id="lessonStudent" required><option value="">Selecione um aluno</option>${students.map(s=>`<option value="${s.id}">${safe(s.name)}</option>`).join("")}</select></label><label class="field">Dia<select class="form-select" id="day">${["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((d,i)=>`<option value="${i}">${d}</option>`).join("")}</select></label><label class="field">Horário<input class="form-control" id="time" type="time" required></label><button class="ui-button btn">Salvar aula</button></form></section><section class="card"><h2 class="section-heading">Aulas pendentes</h2><div class="list">${data.filter(x=>x.status==='pending').map(x=>`<div class="row"><div><b class="row-title">${safe(x.student)}</b><div class="muted">${days[x.weekday]} ${safe(x.time)}</div></div><div class="row-actions"><button class="ui-button btn action compact" title="Marcar como concluída" aria-label="Concluir aula de ${safe(x.student)}" onclick="finishLesson(${x.id})">✓</button><button class="ui-button btn action compact" onclick="delLesson(${x.id})">Excluir</button></div></div>`).join("") || '<div class="empty">Nenhuma aula pendente.</div>'}</div></section></div>`;
+  view.innerHTML = `<div class="grid"><section class="card"><h2 class="section-heading">Nova aula</h2><form class="app-form" id="lf"><label class="field">Aluno cadastrado<select class="form-select" id="lessonStudent" required><option value="">Selecione um aluno</option>${students.map(s=>`<option value="${s.id}">${safe(s.name)}</option>`).join("")}</select></label><label class="field">Data da aula<input class="form-control" id="day" type="date" required></label><label class="field">Horário<input class="form-control" id="time" type="time" required></label><button class="ui-button btn">Salvar aula</button></form></section><section class="card"><h2 class="section-heading">Aulas pendentes</h2><div class="list">${data.filter(x=>x.status==='pending').map(x=>`<div class="row"><div><b class="row-title">${safe(x.student)}</b><div class="muted">${x.scheduled_date ? safe(formatLessonDate(x.scheduled_date)) : "Data não definida (cadastro antigo)"} às ${safe(x.time)}</div></div><div class="row-actions"><button class="ui-button btn action compact" title="Marcar como concluída" aria-label="Concluir aula de ${safe(x.student)}" onclick="finishLesson(${x.id})">✓</button><button class="ui-button btn action compact" onclick="delLesson(${x.id})">Excluir</button></div></div>`).join("") || '<div class="empty">Nenhuma aula pendente.</div>'}</div></section></div>`;
+  document.querySelector('#day').value = localDateISO(new Date());
   document.querySelector('#lf').addEventListener('submit',async e=>{
     e.preventDefault();
     const student = students.find(s=>s.id===Number(document.querySelector('#lessonStudent').value));
     if(!student) return alert('Selecione um aluno cadastrado.');
-    try {await req('/lessons',{method:'POST',body:JSON.stringify({student_id:student.id,student_name:student.name,weekday:Number(document.querySelector('#day').value),time:document.querySelector('#time').value})});await render();}
+    try {await req('/lessons',{method:'POST',body:JSON.stringify({student_id:student.id,student_name:student.name,scheduled_date:document.querySelector('#day').value,time:document.querySelector('#time').value})});await render();}
     catch(err){alert(err.message);}
   });
 }
@@ -173,12 +180,7 @@ function drawStudentLessonCalendar() {
   let cells = Array.from({length:firstDay}, () => '<div class="lesson-calendar-blank" aria-hidden="true"></div>');
   for (let day = 1; day <= count; day++) {
     const date = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const weekday = (new Date(year, month, day).getDay()+6)%7;
-    const events = lessons.filter(x => {
-      if (x.status === 'completed') return calendarDate(x.completed_at) === date;
-      if (x.status === 'cancelled') return calendarDate(x.cancelled_at) === date;
-      return x.weekday === weekday; // Aula semanal pendente: previsão, não presença confirmada.
-    });
+    const events = lessons.filter(x => x.scheduled_date === date);
     const dots = events.map(x => {
       const kind = x.status === 'completed' ? 'lesson-done' : x.status === 'cancelled' ? 'lesson-cancelled' : 'lesson-pending';
       const status = x.status === 'completed' ? 'Concluída' : x.status === 'cancelled' ? 'Cancelada' : 'Prevista';
@@ -188,7 +190,7 @@ function drawStudentLessonCalendar() {
     const isToday = today.getFullYear()===year && today.getMonth()===month && today.getDate()===day;
     cells.push(`<div class="lesson-calendar-day ${isToday?'is-today':''}" aria-label="Dia ${day}, ${events.length} aulas"><span class="lesson-calendar-number">${day}</span><div class="lesson-calendar-dots">${dots}</div></div>`);
   }
-  editor.innerHTML = `<section class="card editor"><h2 class="section-heading">Aulas de ${safe(state.name)}</h2><div class="lesson-calendar-nav"><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(-1)" aria-label="Mês anterior">‹</button><strong>${safe(label)}</strong><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(1)" aria-label="Próximo mês">›</button></div><div class="lesson-calendar-grid">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div class="lesson-calendar-weekday">${d}</div>`).join('')}${cells.join('')}</div><div class="lesson-calendar-legend"><span><i class="lesson-dot lesson-done"></i> Concluída</span><span><i class="lesson-dot lesson-pending"></i> Prevista / não concluída</span><span><i class="lesson-dot lesson-cancelled"></i> Cancelada</span></div><p class="muted lesson-calendar-note">Aulas pendentes são exibidas semanalmente no dia programado. Aulas concluídas e canceladas aparecem na data em que foram marcadas. O cadastro atual não registra uma data específica para cada ocorrência.</p></section>`;
+  editor.innerHTML = `<section class="card editor"><h2 class="section-heading">Aulas de ${safe(state.name)}</h2><div class="lesson-calendar-nav"><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(-1)" aria-label="Mês anterior">‹</button><strong>${safe(label)}</strong><button class="ui-button btn action compact" onclick="changeStudentLessonMonth(1)" aria-label="Próximo mês">›</button></div><div class="lesson-calendar-grid">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div class="lesson-calendar-weekday">${d}</div>`).join('')}${cells.join('')}</div><div class="lesson-calendar-legend"><span><i class="lesson-dot lesson-done"></i> Concluída</span><span><i class="lesson-dot lesson-pending"></i> Prevista / não concluída</span><span><i class="lesson-dot lesson-cancelled"></i> Cancelada</span></div><p class="muted lesson-calendar-note">Cada bolinha representa uma aula na data agendada, mesmo que tenha sido concluída ou cancelada em outro dia. Registros antigos sem data específica precisam ser reagendados.</p></section>`;
 }
 function changeStudentLessonMonth(offset) {
   const next = new Date(lessonCalendarState.year, lessonCalendarState.month + offset, 1);
